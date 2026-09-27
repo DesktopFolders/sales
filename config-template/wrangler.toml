@@ -1,0 +1,29 @@
+# Config for one org's copy of the sales (CRM report) app. It lives in the host repo, outside the
+# app folder, so the app itself stays org-neutral. Paths below resolve from this folder.
+name = "sales"
+main = "{{APP_DIR}}/src/index.js"
+compatibility_date = "2026-09-01"
+
+# Static frontend. The Worker only runs first for /api/* routes.
+[assets]
+directory = "{{APP_DIR}}/public"
+binding = "ASSETS"
+run_worker_first = ["/api/*"]
+
+# Non-secret config for this org. The same keys in the shared env file override these during `npm run dev`.
+# Secrets are NEVER set here:
+#   local  -> the shared env file named by the host's automation/paths.yaml (written by the setup form)
+#   deploy -> GitHub Actions secrets -> Worker secrets (see deploy.yml in the app's config-template folder)
+[vars]
+CRM_PROVIDER = "salesforce"      # which src/providers/ module to use
+REPORT_CACHE_SECONDS = "300"
+
+# Salesforce provider
+SF_INSTANCE_URL = ""
+SF_REPORT_ID = ""
+SF_API_VERSION = "v62.0"
+
+# Secrets the provider needs. `npm run dev` passes only these (and overrides of [vars]) from the
+# shared env file, so the Worker never sees the file's other keys.
+[secrets]
+required = ["SF_CLIENT_ID", "SF_CLIENT_SECRET"]

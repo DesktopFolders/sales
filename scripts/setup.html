@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CRM Settings</title>
+  <style>
+    :root {
+      --bg: #f7f7f5; --panel: #fff; --text: #1c1c1a; --muted: #6b6b66; --line: #e4e3de;
+      --accent: #0b6bcb; --accent-ink: #fff; --ok: #067647; --ok-soft: #e7f6ec; --warn: #93370d; --warn-soft: #fef0c7;
+      --err: #b42318; --err-soft: #fdecea; --chip: #f0efeb;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #141413; --panel: #1d1d1b; --text: #ececea; --muted: #9a9a94; --line: #2e2e2b;
+        --accent: #5aa6f0; --accent-ink: #0b1a28; --ok: #6ce9a6; --ok-soft: #0f2a1d; --warn: #fdb022; --warn-soft: #33260b;
+        --err: #f97066; --err-soft: #3a1c1a; --chip: #262624;
+      }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+    main { max-width: 760px; margin: 0 auto; padding: 32px 16px 64px; }
+    h1 { font-size: 22px; margin: 0 0 6px; letter-spacing: -0.01em; }
+    .lede { color: var(--muted); margin: 0 0 20px; }
+    a { color: var(--accent); }
+    .worker { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 14px; margin-bottom: 20px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+    .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
+    .dot.running { background: var(--ok); } .dot.starting { background: var(--warn); } .dot.error, .dot.stopped { background: var(--err); }
+    .worker .spacer { flex: 1; }
+    details.guide { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; margin-bottom: 20px; }
+    details.guide summary { cursor: pointer; font-weight: 600; }
+    details.guide ol { padding-left: 20px; margin: 10px 0 4px; }
+    details.guide li { margin: 6px 0; }
+    code { background: var(--chip); padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+    .field { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 12px; }
+    .field-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 4px; }
+    .field-head label { font-weight: 600; }
+    .key { color: var(--muted); font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .badge { margin-left: auto; font-size: 12px; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+    .badge.set { background: var(--ok-soft); color: var(--ok); }
+    .badge.default { background: var(--chip); color: var(--muted); }
+    .badge.unset { background: var(--warn-soft); color: var(--warn); }
+    .help { color: var(--muted); font-size: 13px; margin: 0 0 10px; }
+    .row { display: flex; gap: 8px; }
+    input { flex: 1; min-width: 0; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+    input.invalid { border-color: var(--err); }
+    .field-error { color: var(--err); font-size: 12.5px; margin-top: 6px; }
+    button { padding: 9px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); font: inherit; cursor: pointer; white-space: nowrap; }
+    button:hover:not(:disabled) { border-color: var(--accent); }
+    button:disabled { opacity: .55; cursor: default; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+    button.link { border: 0; background: none; color: var(--err); padding: 0; font-size: 12.5px; }
+    .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 18px; }
+    .msg { padding: 10px 14px; border-radius: 8px; margin-top: 14px; font-size: 13px; }
+    .msg.ok { background: var(--ok-soft); color: var(--ok); } .msg.err { background: var(--err-soft); color: var(--err); }
+    .msg:empty { display: none; }
+    .note { color: var(--muted); font-size: 12.5px; margin-top: 24px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1 id="heading">CRM settings</h1>
+  <p class="lede">Saving restarts the local Worker so it picks up the new values. Saved secrets are never shown here — leave a field blank to keep what's stored.</p>
+
+  <div class="worker" id="worker">
+    <span class="dot" id="worker-dot"></span>
+    <span id="worker-text">Checking worker…</span>
+    <span class="spacer"></span>
+    <button type="button" id="test">Test connection</button>
+    <a id="app-link" href="#" target="sales-list">View List</a>
+  </div>
+
+  <details class="guide" id="guide">
+    <summary id="guide-title"></summary>
+    <div id="guide-body"></div>
+  </details>
+
+  <form id="form" autocomplete="off" novalidate></form>
+
+  <div class="actions">
+    <button type="submit" form="form" class="primary" id="save">Save &amp; restart worker</button>
+    <span class="help" id="dirty" style="margin:0"></span>
+  </div>
+  <div class="msg" id="msg" role="status"></div>
+
+  <p class="note">This form only runs on your machine while <code>npm run dev</code> is running. To push the secrets to GitHub for deploys, run <code>npm run secrets:push</code>.</p>
+</main>
+
+<script>
+  // The token is in the link's #t=… part, which is never sent to the server; API calls send it in a header.
+  const TOKEN = new URLSearchParams(location.hash.slice(1)).get("t") || "";
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+  let state = null;
+
+  async function api(path, opts = {}) {
+    const res = await fetch(path, { ...opts, headers: { "X-Setup-Token": TOKEN, ...(opts.body ? { "Content-Type": "application/json" } : {}) } });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw Object.assign(new Error(body.error || `Request failed (${res.status})`), { body });
+    return body;
+  }
+
+  function badge(f) {
+    if (f.set) return `<span class="badge set">✓ Saved</span>`;
+    if (f.source === "wrangler.toml") return `<span class="badge default">Default from wrangler.toml</span>`;
+    return `<span class="badge unset">Not set</span>`;
+  }
+
+  function renderForm() {
+    $("heading").textContent = `${state.provider.name} settings`;
+    document.title = `${state.provider.name} Settings`;
+    $("form").innerHTML = state.fields.map((f) => {
+      const isSecret = f.secret;
+      const placeholder = isSecret && f.set ? "•••••••• saved — leave blank to keep" : f.placeholder;
+      const value = isSecret ? "" : esc(f.value);
+      return `<div class="field" data-key="${f.key}">
+        <div class="field-head"><label for="${f.key}">${esc(f.label)}</label><span class="key">${f.key}</span>${badge(f)}</div>
+        <p class="help">${f.help}</p>
+        <div class="row">
+          <input id="${f.key}" name="${f.key}" type="${isSecret ? "password" : "text"}" value="${value}" data-initial="${value}"
+                 placeholder="${esc(placeholder)}" spellcheck="false" autocomplete="${isSecret ? "new-password" : "off"}" />
+          ${isSecret ? `<button type="button" data-toggle="${f.key}" aria-label="Show value">Show</button>` : ""}
+        </div>
+        ${isSecret && f.set ? `<div style="margin-top:8px"><button type="button" class="link" data-clear="${f.key}">Remove saved value</button></div>` : ""}
+        <div class="field-error" id="err-${f.key}"></div>
+      </div>`;
+    }).join("");
+    // Help and guide HTML come from the provider module on the local dev server, not from user input.
+    $("guide-title").textContent = state.guide.title;
+    $("guide-body").innerHTML = state.guide.html;
+    $("guide").open = state.fields.some((f) => f.secret && !f.set);
+    updateDirty();
+  }
+
+  function renderWorker() {
+    const w = state.worker;
+    $("worker-dot").className = `dot ${w.status}`;
+    const words = { running: "Local worker running", starting: "Worker starting…", stopped: "Worker stopped", error: "Worker error" };
+    $("worker-text").textContent = `${words[w.status] || w.status}${w.message ? " — " + w.message : ""}`;
+    $("app-link").href = w.url;
+  }
+
+  function changes() {
+    const values = {};
+    for (const input of $("form").querySelectorAll("input")) {
+      if (input.value.trim() !== input.dataset.initial) values[input.name] = input.value.trim();
+    }
+    return values;
+  }
+
+  function updateDirty() {
+    const n = Object.values(changes()).filter(Boolean).length;
+    $("dirty").textContent = n ? `${n} unsaved change${n > 1 ? "s" : ""}` : "";
+  }
+
+  async function refresh() {
+    state = await api("/api/status");
+    renderForm();
+    renderWorker();
+  }
+
+  function showMsg(kind, html) { $("msg").className = `msg ${kind}`; $("msg").innerHTML = html; }
+
+  async function save(values, clear = []) {
+    document.querySelectorAll(".field-error").forEach((e) => (e.textContent = ""));
+    document.querySelectorAll("input.invalid").forEach((e) => e.classList.remove("invalid"));
+    $("save").disabled = true;
+    $("save").textContent = "Saving & restarting worker…";
+    $("msg").textContent = "";
+    state.worker = { ...state.worker, status: "starting", message: "" }; renderWorker();
+    try {
+      const res = await api("/api/secrets", { method: "POST", body: JSON.stringify({ values, clear }) });
+      state = res;
+      renderForm(); renderWorker();
+      if (!res.changed.length) showMsg("ok", "Nothing changed.");
+      else showMsg(res.worker.status === "running" ? "ok" : "err",
+        `Updated ${res.changed.map((k) => `<code>${k}</code>`).join(", ")}. ${res.worker.status === "running" ? "Worker restarted with the new values." : esc(res.worker.message)}`);
+    } catch (e) {
+      for (const { key, message } of e.body?.errors || []) {
+        const el = $(`err-${key}`); if (el) el.textContent = message;
+        $(key)?.classList.add("invalid");
+      }
+      showMsg("err", esc(e.message));
+      await refresh().catch(() => {});
+    } finally {
+      $("save").disabled = false;
+      $("save").textContent = "Save & restart worker";
+    }
+  }
+
+  $("form").addEventListener("submit", (e) => { e.preventDefault(); save(changes()); });
+  $("form").addEventListener("input", updateDirty);
+  $("form").addEventListener("click", (e) => {
+    const t = e.target.closest("[data-toggle]");
+    if (t) { const i = $(t.dataset.toggle); const show = i.type === "password"; i.type = show ? "text" : "password"; t.textContent = show ? "Hide" : "Show"; }
+    const c = e.target.closest("[data-clear]");
+    if (c && confirm(`Remove the saved ${c.dataset.clear}?`)) save({}, [c.dataset.clear]);
+  });
+  $("test").addEventListener("click", async () => {
+    $("test").disabled = true; $("test").textContent = "Testing…";
+    try {
+      const r = await api("/api/test", { method: "POST" });
+      if (r.ok) showMsg("ok", `Connected — “${esc(r.name)}” returned ${r.rowCount} rows.`);
+      else showMsg("err", `${esc(r.error)}${r.detail ? `<br><code>${esc(JSON.stringify(r.detail))}</code>` : ""}`);
+    } catch (e) { showMsg("err", esc(e.message)); }
+    finally { $("test").disabled = false; $("test").textContent = "Test connection"; }
+  });
+
+  refresh().catch((e) => showMsg("err", esc(e.message)));
+  setInterval(() => api("/api/status").then((s) => { state.worker = s.worker; renderWorker(); }).catch(() => {}), 4000);
+</script>
+</body>
+</html>

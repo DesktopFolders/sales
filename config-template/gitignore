@@ -1,0 +1,7 @@
+# Secrets live in the shared env file named by automation/paths.yaml, not here.
+# These are ignored only as a safety net.
+.env
+.env.*
+.dev.vars
+.wrangler/
+*.tmp

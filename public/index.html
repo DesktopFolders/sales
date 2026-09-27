@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Report</title>
+  <style>
+    :root {
+      --bg: #f7f7f5; --panel: #ffffff; --text: #1c1c1a; --muted: #6b6b66; --line: #e4e3de;
+      --accent: #0b6bcb; --accent-soft: #e8f1fb; --danger: #b42318; --danger-soft: #fdecea; --row-hover: #fafaf8;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #141413; --panel: #1d1d1b; --text: #ececea; --muted: #9a9a94; --line: #2e2e2b;
+        --accent: #5aa6f0; --accent-soft: #16283a; --danger: #f97066; --danger-soft: #3a1c1a; --row-hover: #232321;
+      }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+    main { max-width: 1200px; margin: 0 auto; padding: 32px 16px 64px; }
+    header { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+    h1 { font-size: 24px; margin: 0 0 4px; letter-spacing: -0.01em; }
+    .meta { color: var(--muted); font-size: 13px; }
+    .meta a { color: var(--accent); text-decoration: none; }
+    .controls { display: flex; gap: 8px; }
+    input[type=search] { width: 260px; max-width: 60vw; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); font: inherit; }
+    button { padding: 8px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); font: inherit; cursor: pointer; }
+    button:hover { border-color: var(--accent); }
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
+    th { position: sticky; top: 0; background: var(--panel); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); cursor: pointer; user-select: none; }
+    th[aria-sort=ascending]::after { content: " ▲"; } th[aria-sort=descending]::after { content: " ▼"; }
+    th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    tbody tr:hover { background: var(--row-hover); }
+    tbody tr:last-child td { border-bottom: 0; }
+    .state { padding: 48px 16px; text-align: center; color: var(--muted); }
+    .error { margin: 0 0 16px; padding: 12px 14px; border-radius: 8px; background: var(--danger-soft); color: var(--danger); }
+    .error code { font-size: 12px; }
+    .error a { color: inherit; font-weight: 600; }
+    .error .help-step { margin-top: 12px; }
+    .warn { margin: 0 0 16px; padding: 10px 14px; border-radius: 8px; background: var(--accent-soft); color: var(--text); font-size: 13px; }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1 id="title">Report</h1>
+      <div class="meta" id="meta">Loading…</div>
+    </div>
+    <div class="controls">
+      <input type="search" id="q" placeholder="Filter rows…" aria-label="Filter rows" />
+      <button id="refresh" type="button">Refresh</button>
+    </div>
+  </header>
+  <div id="notice"></div>
+  <div class="panel"><div id="table" class="state">Loading report…</div></div>
+</main>
+<script>
+  const NUMERIC = new Set(["int", "double", "currency", "percent"]);
+  let report = null, sortKey = null, sortDir = 1;
+
+  // Links open in named tabs (target="crm", "sales-settings") so repeat clicks reuse the same tab.
+  // They omit rel="noopener", which would stop the browser from finding the existing tab.
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+  async function load(refresh = false) {
+    $("notice").innerHTML = "";
+    $("meta").textContent = "Loading…";
+    try {
+      const res = await fetch("api/report" + (refresh ? "?refresh=1" : ""));
+      const body = await res.json();
+      if (!res.ok) throw body;
+      report = body;
+      render();
+    } catch (e) {
+      const detail = e?.detail ? `<br><code>${esc(JSON.stringify(e.detail))}</code>` : "";
+      const h = e?.help;
+      const form = /^http:\/\/(localhost|127\.0\.0\.1):\d+\//.test(h?.settingsUrl || "")
+        ? `<a href="${esc(h.settingsUrl)}" target="sales-settings">settings form</a>` : "settings form";
+      const agent = h?.agentCommand
+        ? `<div class="help-step">Then ask your agent to <strong>“${esc(h.agentCommand)}”</strong> and paste them into the ${form} it opens.</div>`
+        : h?.settingsUrl ? `<div class="help-step">Then paste them into the ${form}.</div>` : "";
+      const help = /^https:\/\//.test(h?.url || "")
+        ? `<div class="help-step">${h.title ? `<strong>${esc(h.title)}</strong><br>` : ""}${esc(h.text)} <a href="${esc(h.url)}" target="crm">${esc(h.link || "Open")}</a></div>${agent}`
+        : "";
+      $("notice").innerHTML = `<div class="error">${esc(e?.error || e?.message || "Could not load report")}${help}${detail}</div>`;
+      $("meta").textContent = "";
+      $("table").className = "state";
+      $("table").textContent = "No data.";
+    }
+  }
+
+  function render() {
+    const { name, columns, rows, fetchedAt, sourceUrl, sourceName, notice } = report;
+    $("title").textContent = name;
+    document.title = name;
+    const q = $("q").value.trim().toLowerCase();
+    let list = q ? rows.filter((r) => columns.some((c) => String(r[c.key]?.label ?? "").toLowerCase().includes(q))) : rows.slice();
+    if (sortKey) {
+      const col = columns.find((c) => c.key === sortKey);
+      const numeric = NUMERIC.has(col?.type);
+      list.sort((a, b) => {
+        const av = numeric ? Number(a[sortKey]?.value ?? -Infinity) : String(a[sortKey]?.label ?? "");
+        const bv = numeric ? Number(b[sortKey]?.value ?? -Infinity) : String(b[sortKey]?.label ?? "");
+        return (numeric ? av - bv : av.localeCompare(bv, undefined, { numeric: true })) * sortDir;
+      });
+    }
+    const link = sourceUrl ? ` · <a href="${esc(sourceUrl)}" target="crm">Open in ${esc(sourceName || "CRM")} ↗</a>` : "";
+    $("meta").innerHTML = `${list.length} of ${rows.length} rows · updated ${esc(new Date(fetchedAt).toLocaleString())}${link}`;
+    if (notice) $("notice").innerHTML = `<div class="warn">${esc(notice)}</div>`;
+
+    if (!list.length) { $("table").className = "state"; $("table").textContent = q ? "No rows match your filter." : "This report has no rows."; return; }
+    $("table").className = "";
+    $("table").innerHTML = `<table><thead><tr>${columns.map((c) =>
+      `<th class="${NUMERIC.has(c.type) ? "num" : ""}" data-key="${esc(c.key)}" aria-sort="${c.key === sortKey ? (sortDir > 0 ? "ascending" : "descending") : "none"}">${esc(c.label)}</th>`).join("")}</tr></thead>
+      <tbody>${list.map((r) => `<tr>${columns.map((c) =>
+        `<td class="${NUMERIC.has(c.type) ? "num" : ""}">${esc(r[c.key]?.label)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+  }
+
+  $("table").addEventListener("click", (e) => {
+    const th = e.target.closest("th"); if (!th) return;
+    sortDir = sortKey === th.dataset.key ? -sortDir : 1;
+    sortKey = th.dataset.key;
+    render();
+  });
+  $("q").addEventListener("input", () => report && render());
+  $("refresh").addEventListener("click", () => load(true));
+  load();
+</script>
+</body>
+</html>

@@ -1,0 +1,58 @@
+# Template GitHub Actions workflow for a host repo that includes this app as a submodule.
+# Copy it to the host repo's .github/workflows/ (e.g. sales-deploy.yml) and adjust APP_DIR and
+# CONFIG_DIR if the submodule or config folder has a different path.
+name: Deploy sales app
+
+on:
+  push:
+    branches: [main]
+    paths: ["sales", "sales/**", "sales-config/**"]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-sales
+  cancel-in-progress: false
+
+env:
+  APP_DIR: sales
+  CONFIG_DIR: sales-config
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # Optional: create a "production" Environment in GitHub (Settings › Environments) to scope
+    # the secrets and add required reviewers. Then push with: npm run secrets:push -- --env production
+    environment: production
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ${{ env.APP_DIR }}/package-lock.json
+
+      - run: npm ci
+        working-directory: ${{ env.APP_DIR }}
+      - run: npm test
+        working-directory: ${{ env.APP_DIR }}
+
+      # Secrets go in with the deploy (--secrets-file), which also works for the Worker's first
+      # deploy. List the secrets of your CRM provider (these are Salesforce's). The file is written with owner-only permissions and removed right after.
+      - name: Deploy Worker with secrets
+        working-directory: ${{ env.APP_DIR }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          SF_CLIENT_ID: ${{ secrets.SF_CLIENT_ID }}
+          SF_CLIENT_SECRET: ${{ secrets.SF_CLIENT_SECRET }}
+        run: |
+          umask 077
+          SECRETS_FILE="$RUNNER_TEMP/sales-secrets.json"
+          node -e 'const e = process.env; console.log(JSON.stringify({ SF_CLIENT_ID: e.SF_CLIENT_ID, SF_CLIENT_SECRET: e.SF_CLIENT_SECRET }))' > "$SECRETS_FILE"
+          npx wrangler deploy --config "$GITHUB_WORKSPACE/$CONFIG_DIR/wrangler.toml" --secrets-file "$SECRETS_FILE"
+          rm -f "$SECRETS_FILE"

@@ -1,0 +1,19 @@
+{
+  "name": "sales",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Cloudflare Worker + frontend that shows a CRM report (Salesforce for now)",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "deploy": "node scripts/deploy.mjs",
+    "secrets:push": "node scripts/push-secrets.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "wrangler": "^4.141.0"
+  }
+}
