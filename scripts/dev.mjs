@@ -17,8 +17,8 @@ import { randomBytes, timingSafeEqual } from "node:crypto";
 import { readFileSync, writeFileSync, existsSync, renameSync, chmodSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { parseEnv, serializeEnv, validate } from "./env-file.mjs";
-import { getProvider } from "../src/providers/index.js";
-import { ROOT, CONFIG_DIR, ENV_PATH, MISSING_ENV_HELP, WRANGLER_TOML, WRANGLER_BIN, ensureConfig, wranglerVars, hostAgentCommand } from "./config.mjs";
+import { getProvider, PROVIDERS } from "../src/providers/index.js";
+import { ROOT, CONFIG_DIR, ENV_PATH, MISSING_ENV_HELP, WRANGLER_TOML, WRANGLER_BIN, ensureConfig, wranglerVars, hostAgentCommand, workerName } from "./config.mjs";
 
 if (!ENV_PATH) {
   console.error(MISSING_ENV_HELP);
@@ -48,14 +48,13 @@ function currentProvider(values = parseEnv(readEnvText()).values) {
   return getProvider(values.CRM_PROVIDER || wranglerVars().CRM_PROVIDER);
 }
 
-function status() {
-  const { values } = parseEnv(readEnvText());
-  const defaults = wranglerVars(); // shown when the env file has no override
-  const provider = currentProvider(values);
+// One provider's fields and setup guide. Secret values are never included.
+function providerStatus(provider, values, defaults) {
   const publicValues = Object.fromEntries(provider.settings.filter((f) => !f.secret).map((f) => [f.key, values[f.key] || defaults[f.key] || ""]));
   const links = provider.links(publicValues);
   return {
-    provider: { id: provider.id, name: provider.name },
+    id: provider.id,
+    name: provider.name,
     guide: provider.guide(links),
     fields: provider.settings.map((f) => {
       const inEnv = Boolean(values[f.key]);
@@ -63,10 +62,20 @@ function status() {
         key: f.key, secret: f.secret, label: f.label, placeholder: f.placeholder, help: f.help(links),
         set: inEnv, source: inEnv ? "env" : defaults[f.key] ? "wrangler.toml" : null,
       };
-      // Only non-secret settings ever have their value returned.
       if (!f.secret) entry.value = publicValues[f.key];
       return entry;
     }),
+  };
+}
+
+// Every provider gets a tab in the form; `active` is the one the Worker uses (CRM_PROVIDER).
+function status() {
+  const { values } = parseEnv(readEnvText());
+  const defaults = wranglerVars(); // shown when the env file has no override
+  return {
+    instance: workerName(),
+    active: currentProvider(values).id,
+    providers: Object.values(PROVIDERS).map((p) => providerStatus(p, values, defaults)),
     worker: { ...worker.state, url: `http://localhost:${WORKER_PORT}` },
   };
 }
@@ -92,6 +101,7 @@ const worker = {
     // Local only: lets the page link to this settings form, and suggest the host's agent command.
     // The token is the same one printed in the terminal; it lasts as long as this process.
     args.push("--var", `SETTINGS_FORM_URL:http://localhost:${SETUP_PORT}/#t=${TOKEN}`);
+    args.push("--var", `SALES_INSTANCE:${workerName()}`); // names the report page's browser tab
     const agentCommand = hostAgentCommand();
     if (agentCommand) args.push("--var", `AGENT_START_COMMAND:${agentCommand}`);
     this.state = { status: "starting", message: "" };
@@ -206,8 +216,8 @@ const server = http.createServer(async (req, res) => {
       if (saving) return send(res, 409, { error: "A save is already in progress" });
       saving = true;
       try {
-        const { values = {}, clear = [] } = JSON.parse(await readBody(req));
-        const { updates, errors } = validate(values, clear, currentProvider().settings);
+        const { provider: providerId, values = {}, clear = [] } = JSON.parse(await readBody(req));
+        const { updates, errors } = validate(values, clear, (providerId ? getProvider(providerId) : currentProvider()).settings);
         if (errors.length) return send(res, 400, { error: "Some values are invalid", errors });
         const changed = Object.keys(updates);
         if (!changed.length) return send(res, 200, { changed: [], ...status() });
@@ -217,6 +227,23 @@ const server = http.createServer(async (req, res) => {
         console.log(`\x1b[32m[setup]\x1b[0m Saved ${changed.join(", ")} — restarting worker…`);
         await worker.restart();
         return send(res, 200, { changed, ...status() });
+      } finally {
+        saving = false;
+      }
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/provider") {
+      // "Use this CRM": sets CRM_PROVIDER in the env file (a local override of wrangler.toml) and restarts.
+      if (!String(req.headers["content-type"]).startsWith("application/json")) return send(res, 415, { error: "Expected JSON" });
+      if (saving) return send(res, 409, { error: "A save is already in progress" });
+      saving = true;
+      try {
+        const { provider: providerId } = JSON.parse(await readBody(req));
+        if (!Object.hasOwn(PROVIDERS, providerId)) return send(res, 400, { error: "Unknown CRM" });
+        writeEnvText(serializeEnv(parseEnv(readEnvText()), { CRM_PROVIDER: providerId }));
+        console.log(`\x1b[32m[setup]\x1b[0m Using CRM ${providerId} — restarting worker…`);
+        await worker.restart();
+        return send(res, 200, status());
       } finally {
         saving = false;
       }

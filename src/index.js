@@ -41,6 +41,8 @@ export default {
         return json({
           ok: true,
           provider: provider.id,
+          providerName: provider.name,
+          instance: env.SALES_INSTANCE || null, // only set by `npm run dev`, for naming browser tabs
           configured: Object.fromEntries(provider.settings.map((s) => [s.key, Boolean(env[s.key])])),
         });
       }

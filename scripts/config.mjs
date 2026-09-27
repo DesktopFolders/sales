@@ -67,6 +67,14 @@ export function ensureConfig() {
   return true;
 }
 
+// The Worker's name from wrangler.toml (e.g. "iteam-sales"). Browser tabs are named after it
+// ("iteam-sales-settings", "iteam-sales-list"), so two instances running at once keep separate tabs.
+export function workerName() {
+  if (!existsSync(WRANGLER_TOML)) return "sales";
+  const m = readFileSync(WRANGLER_TOML, "utf8").match(/^\s*name\s*=\s*"([A-Za-z0-9_-]+)"/m);
+  return m ? m[1] : "sales";
+}
+
 // Non-secret values from wrangler.toml [vars].
 export function wranglerVars() {
   if (!existsSync(WRANGLER_TOML)) return {};

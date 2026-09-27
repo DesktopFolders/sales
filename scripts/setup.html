@@ -56,11 +56,15 @@
     .msg.ok { background: var(--ok-soft); color: var(--ok); } .msg.err { background: var(--err-soft); color: var(--err); }
     .msg:empty { display: none; }
     .note { color: var(--muted); font-size: 12.5px; margin-top: 24px; }
+    .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+    .tab { border-radius: 999px; padding: 7px 14px; }
+    .tab[aria-selected=true] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+    .in-use { font-size: 12.5px; color: var(--ok); }
   </style>
 </head>
 <body>
 <main>
-  <h1 id="heading">CRM settings</h1>
+  <h1 id="heading">CRM Settings</h1>
   <p class="lede">Saving restarts the local Worker so it picks up the new values. Saved secrets are never shown here — leave a field blank to keep what's stored.</p>
 
   <div class="worker" id="worker">
@@ -71,6 +75,8 @@
     <a id="app-link" href="#" target="sales-list">View List</a>
   </div>
 
+  <div class="tabs" id="tabs" role="tablist" aria-label="CRM"></div>
+
   <details class="guide" id="guide">
     <summary id="guide-title"></summary>
     <div id="guide-body"></div>
@@ -80,6 +86,8 @@
 
   <div class="actions">
     <button type="submit" form="form" class="primary" id="save">Save &amp; restart worker</button>
+    <button type="button" id="use">Use this CRM</button>
+    <span class="in-use" id="in-use">✓ In use</span>
     <span class="help" id="dirty" style="margin:0"></span>
   </div>
   <div class="msg" id="msg" role="status"></div>
@@ -89,11 +97,21 @@
 
 <script>
   // The token is in the link's #t=… part, which is never sent to the server; API calls send it in a header.
+  // An older ?t=… link still works: its token moves to #t=… and drops out of the address.
+  const legacyToken = new URLSearchParams(location.search).get("t");
+  if (legacyToken && !location.hash) history.replaceState(null, "", `${location.pathname}#t=${encodeURIComponent(legacyToken)}`);
   const TOKEN = new URLSearchParams(location.hash.slice(1)).get("t") || "";
+  // Name this tab "<instance>-settings" (instance = the Worker name, e.g. "iteam-sales") so links from
+  // the report page land here instead of opening another. Browsers only match names between tabs that
+  // opened one another. Renamed once the status arrives.
+  window.name = "sales-settings";
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
   let state = null;
+  let selected = null; // id of the CRM tab being shown; starts on the one in use
+
+  const current = () => state.providers.find((p) => p.id === selected) || state.providers[0];
 
   async function api(path, opts = {}) {
     const res = await fetch(path, { ...opts, headers: { "X-Setup-Token": TOKEN, ...(opts.body ? { "Content-Type": "application/json" } : {}) } });
@@ -108,10 +126,19 @@
     return `<span class="badge unset">Not set</span>`;
   }
 
+  function renderTabs() {
+    if (!state.providers.some((p) => p.id === selected)) selected = state.active;
+    $("tabs").innerHTML = state.providers.map((p) =>
+      `<button type="button" class="tab" role="tab" data-tab="${esc(p.id)}" aria-selected="${p.id === selected}">${esc(p.name)}${p.id === state.active ? " ✓" : ""}</button>`).join("");
+    const inUse = selected === state.active;
+    $("use").hidden = inUse;
+    $("in-use").hidden = !inUse;
+  }
+
   function renderForm() {
-    $("heading").textContent = `${state.provider.name} settings`;
-    document.title = `${state.provider.name} Settings`;
-    $("form").innerHTML = state.fields.map((f) => {
+    const provider = current();
+    renderTabs();
+    $("form").innerHTML = provider.fields.map((f) => {
       const isSecret = f.secret;
       const placeholder = isSecret && f.set ? "•••••••• saved — leave blank to keep" : f.placeholder;
       const value = isSecret ? "" : esc(f.value);
@@ -128,9 +155,9 @@
       </div>`;
     }).join("");
     // Help and guide HTML come from the provider module on the local dev server, not from user input.
-    $("guide-title").textContent = state.guide.title;
-    $("guide-body").innerHTML = state.guide.html;
-    $("guide").open = state.fields.some((f) => f.secret && !f.set);
+    $("guide-title").textContent = provider.guide.title;
+    $("guide-body").innerHTML = provider.guide.html;
+    $("guide").open = provider.fields.some((f) => f.secret && !f.set);
     updateDirty();
   }
 
@@ -140,6 +167,7 @@
     const words = { running: "Local worker running", starting: "Worker starting…", stopped: "Worker stopped", error: "Worker error" };
     $("worker-text").textContent = `${words[w.status] || w.status}${w.message ? " — " + w.message : ""}`;
     $("app-link").href = w.url;
+    $("app-link").target = `${state.instance}-list`;
   }
 
   function changes() {
@@ -157,6 +185,8 @@
 
   async function refresh() {
     state = await api("/api/status");
+    selected ??= state.active;
+    window.name = `${state.instance}-settings`;
     renderForm();
     renderWorker();
   }
@@ -171,7 +201,7 @@
     $("msg").textContent = "";
     state.worker = { ...state.worker, status: "starting", message: "" }; renderWorker();
     try {
-      const res = await api("/api/secrets", { method: "POST", body: JSON.stringify({ values, clear }) });
+      const res = await api("/api/secrets", { method: "POST", body: JSON.stringify({ provider: selected, values, clear }) });
       state = res;
       renderForm(); renderWorker();
       if (!res.changed.length) showMsg("ok", "Nothing changed.");
@@ -198,6 +228,23 @@
     const c = e.target.closest("[data-clear]");
     if (c && confirm(`Remove the saved ${c.dataset.clear}?`)) save({}, [c.dataset.clear]);
   });
+  $("tabs").addEventListener("click", (e) => {
+    const tab = e.target.closest("[data-tab]");
+    if (!tab || tab.dataset.tab === selected) return;
+    if (Object.values(changes()).some(Boolean) && !confirm("Discard unsaved changes on this tab?")) return;
+    selected = tab.dataset.tab;
+    $("msg").textContent = "";
+    renderForm();
+  });
+  $("use").addEventListener("click", async () => {
+    $("use").disabled = true; $("use").textContent = "Switching & restarting worker…";
+    try {
+      state = await api("/api/provider", { method: "POST", body: JSON.stringify({ provider: selected }) });
+      renderForm(); renderWorker();
+      showMsg("ok", `Now using ${esc(current().name)} locally. Deploys use <code>CRM_PROVIDER</code> in the host's <code>wrangler.toml</code>.`);
+    } catch (e) { showMsg("err", esc(e.message)); }
+    finally { $("use").disabled = false; $("use").textContent = "Use this CRM"; }
+  });
   $("test").addEventListener("click", async () => {
     $("test").disabled = true; $("test").textContent = "Testing…";
     try {
@@ -208,7 +255,9 @@
     finally { $("test").disabled = false; $("test").textContent = "Test connection"; }
   });
 
-  refresh().catch((e) => showMsg("err", esc(e.message)));
+  refresh().catch((e) => showMsg("err", TOKEN
+    ? "This settings link has expired. Use the current link from the terminal, or the “settings form” link on the report page."
+    : "Open this page with the settings form link from the terminal (it ends in #t=…)."));
   setInterval(() => api("/api/status").then((s) => { state.worker = s.worker; renderWorker(); }).catch(() => {}), 4000);
 </script>
 </body>

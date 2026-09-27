@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Report</title>
+  <title>CRM Report</title>
   <style>
     :root {
       --bg: #f7f7f5; --panel: #ffffff; --text: #1c1c1a; --muted: #6b6b66; --line: #e4e3de;
@@ -46,7 +46,7 @@
 <main>
   <header>
     <div>
-      <h1 id="title">Report</h1>
+      <h1 id="title">CRM Report</h1>
       <div class="meta" id="meta">Loading…</div>
     </div>
     <div class="controls">
@@ -61,8 +61,26 @@
   const NUMERIC = new Set(["int", "double", "currency", "percent"]);
   let report = null, sortKey = null, sortDir = 1;
 
-  // Links open in named tabs (target="crm", "sales-settings") so repeat clicks reuse the same tab.
+  // Links open in named tabs (target="crm", "<instance>-settings") so repeat clicks reuse the same tab.
   // They omit rel="noopener", which would stop the browser from finding the existing tab.
+  // Browser tabs are named after the instance (the Worker name, e.g. "iteam-sales"): this page is
+  // "<instance>-list", the settings form "<instance>-settings". Links target those names so they
+  // land in the open tab instead of adding another. The dev server supplies the name via api/health.
+  let instance = "sales";
+  window.name = "sales-list";
+  function setHeading(crmName) {
+    const heading = crmName ? `${crmName} CRM Report` : "CRM Report";
+    $("title").textContent = heading;
+    document.title = heading;
+  }
+
+  async function nameTab() {
+    try {
+      const h = await (await fetch("api/health")).json();
+      if (/^[A-Za-z0-9_-]+$/.test(h.instance || "")) { instance = h.instance; window.name = `${instance}-list`; }
+      if (h.providerName) setHeading(h.providerName); // e.g. "Salesforce CRM Report", even if the report fails
+    } catch {}
+  }
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -79,7 +97,7 @@
       const detail = e?.detail ? `<br><code>${esc(JSON.stringify(e.detail))}</code>` : "";
       const h = e?.help;
       const form = /^http:\/\/(localhost|127\.0\.0\.1):\d+\//.test(h?.settingsUrl || "")
-        ? `<a href="${esc(h.settingsUrl)}" target="sales-settings">settings form</a>` : "settings form";
+        ? `<a href="${esc(h.settingsUrl)}" target="${instance}-settings">settings form</a>` : "settings form";
       const agent = h?.agentCommand
         ? `<div class="help-step">Then ask your agent to <strong>“${esc(h.agentCommand)}”</strong> and paste them into the ${form} it opens.</div>`
         : h?.settingsUrl ? `<div class="help-step">Then paste them into the ${form}.</div>` : "";
@@ -95,8 +113,7 @@
 
   function render() {
     const { name, columns, rows, fetchedAt, sourceUrl, sourceName, notice } = report;
-    $("title").textContent = name;
-    document.title = name;
+    setHeading(sourceName);
     const q = $("q").value.trim().toLowerCase();
     let list = q ? rows.filter((r) => columns.some((c) => String(r[c.key]?.label ?? "").toLowerCase().includes(q))) : rows.slice();
     if (sortKey) {
@@ -109,7 +126,7 @@
       });
     }
     const link = sourceUrl ? ` · <a href="${esc(sourceUrl)}" target="crm">Open in ${esc(sourceName || "CRM")} ↗</a>` : "";
-    $("meta").innerHTML = `${list.length} of ${rows.length} rows · updated ${esc(new Date(fetchedAt).toLocaleString())}${link}`;
+    $("meta").innerHTML = `${esc(name)} · ${list.length} of ${rows.length} rows · updated ${esc(new Date(fetchedAt).toLocaleString())}${link}`;
     if (notice) $("notice").innerHTML = `<div class="warn">${esc(notice)}</div>`;
 
     if (!list.length) { $("table").className = "state"; $("table").textContent = q ? "No rows match your filter." : "This report has no rows."; return; }
@@ -128,7 +145,7 @@
   });
   $("q").addEventListener("input", () => report && render());
   $("refresh").addEventListener("click", () => load(true));
-  load();
+  nameTab().finally(() => load());
 </script>
 </body>
 </html>

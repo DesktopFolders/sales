@@ -46,6 +46,8 @@ The terminal prints two links:
 
 In the form, follow the first-time guide for your provider, paste the credentials, and click **Save & restart worker**. Values go to the shared env file (kept `chmod 600`) and the local worker restarts with them. Then click **Test connection**.
 
+The form has a tab for each CRM provider. ✓ marks the one in use; **Use this CRM** switches the local Worker to another (deploys use `CRM_PROVIDER` in the host's `wrangler.toml`).
+
 The form never loads saved secrets back into the page. A saved secret shows **✓ Saved in** the env file's name, with an empty field. Leave it blank to keep it, type a new value to replace it, or use **Remove saved value**.
 
 The page calls the API with relative paths, so it also works when a host mounts it under a path such as `/sales/`.

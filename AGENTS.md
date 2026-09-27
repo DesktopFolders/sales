@@ -13,7 +13,7 @@ host's shared env file, named by `env_file:` in `../automation/paths.yaml` (or `
 - `src/providers/salesforce-report.js` — flattens the Salesforce Reports API response (tabular + summary) into `{columns, rows}`.
 - `public/index.html` — the frontend (vanilla JS, no build step). Provider-neutral.
 - `scripts/dev.mjs` — `npm run dev`: local settings form on :8790 + `wrangler dev` on :8787, restarted on save.
-- `scripts/setup.html` — the settings form. Renders whatever fields and guide the provider supplies.
+- `scripts/setup.html` — the settings form. One tab per provider in `src/providers/`, with the fields and guide each supplies. "Use this CRM" sets `CRM_PROVIDER` in the env file (a local override; deploys use `wrangler.toml`).
 - `scripts/env-file.mjs` — env file read/write that keeps other keys intact, and validation against a provider's settings.
 - `scripts/config.mjs` — finds the config folder and the shared env file, creates the config folder from `config-template/` on first run, and detects a host "Start Sites" agent command (passed to the local Worker as `AGENT_START_COMMAND`).
 - `scripts/push-secrets.mjs` — copies the provider's secrets from the shared env file to the host repo's GitHub Actions secrets via `gh`.
